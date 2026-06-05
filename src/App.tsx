@@ -27,12 +27,14 @@ function RequireGame({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const basename = import.meta.env.BASE_URL === '/' ? undefined : import.meta.env.BASE_URL.replace(/\/$/, '');
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner position="top-center" theme="dark" />
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <AuthProvider>
           <GameProvider>
             <Routes>

@@ -59,6 +59,7 @@ export interface MatchEvent {
   clubId?: string;
   playerId?: string;
   assistId?: string;
+  injuryWeeks?: number;
   text: string;
 }
 

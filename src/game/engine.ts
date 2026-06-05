@@ -102,6 +102,17 @@ export function teamRating(club: Club, players: Record<string, Player>): number 
 }
 
 // ---- Match Engine ----
+function pickAssister(xi: Player[], scorer: Player): Player | null {
+  const teammates = xi.filter(p => p.id !== scorer.id);
+  const weighted: Player[] = [];
+  for (const p of teammates) {
+    const w = positionGroup(p.position) === 'MID' ? 6 : positionGroup(p.position) === 'ATT' ? 3 : 1;
+    for (let i = 0; i < w; i++) weighted.push(p);
+  }
+  return weighted.length ? pick(weighted) : null;
+}
+
+// ---- Match Engine ----
 export function simulateMatch(match: Match, state: GameState): Match {
   const home = state.clubs[match.homeId];
   const away = state.clubs[match.awayId];
@@ -126,7 +137,16 @@ export function simulateMatch(match: Match, state: GameState): Match {
       if (scorer) {
         homeGoals++;
         homeScorers.push({ playerId: scorer.id, minute: m });
-        events.push({ minute: m, type: 'goal', clubId: home.id, playerId: scorer.id, text: `⚽ GOAL! ${scorer.firstName} ${scorer.lastName} scores for ${home.shortName}` });
+        let assistId: string | undefined = undefined;
+        let eventText = `⚽ GOAL! ${scorer.firstName} ${scorer.lastName} scores for ${home.shortName}`;
+        if (Math.random() < 0.7) {
+          const assister = pickAssister(homeXI, scorer);
+          if (assister) {
+            assistId = assister.id;
+            eventText += ` (assisted by ${assister.lastName})`;
+          }
+        }
+        events.push({ minute: m, type: 'goal', clubId: home.id, playerId: scorer.id, assistId, text: eventText });
       }
     }
     if (Math.random() < expAway / 90 / 1.6) {
@@ -134,7 +154,16 @@ export function simulateMatch(match: Match, state: GameState): Match {
       if (scorer) {
         awayGoals++;
         awayScorers.push({ playerId: scorer.id, minute: m });
-        events.push({ minute: m, type: 'goal', clubId: away.id, playerId: scorer.id, text: `⚽ GOAL! ${scorer.firstName} ${scorer.lastName} scores for ${away.shortName}` });
+        let assistId: string | undefined = undefined;
+        let eventText = `⚽ GOAL! ${scorer.firstName} ${scorer.lastName} scores for ${away.shortName}`;
+        if (Math.random() < 0.7) {
+          const assister = pickAssister(awayXI, scorer);
+          if (assister) {
+            assistId = assister.id;
+            eventText += ` (assisted by ${assister.lastName})`;
+          }
+        }
+        events.push({ minute: m, type: 'goal', clubId: away.id, playerId: scorer.id, assistId, text: eventText });
       }
     }
     // Cards
@@ -149,7 +178,11 @@ export function simulateMatch(match: Match, state: GameState): Match {
     // Injuries
     if (Math.random() < 0.001) {
       const pl = pick([...homeXI, ...awayXI]);
-      if (pl) { pl.injured = rng(1, 4); events.push({ minute: m, type: 'injury', playerId: pl.id, text: `🚑 Injury — ${pl.lastName} (${pl.injured}w)` }); }
+      if (pl) {
+        const weeks = rng(1, 4);
+        pl.injured = weeks;
+        events.push({ minute: m, type: 'injury', playerId: pl.id, injuryWeeks: weeks, text: `🚑 Injury — ${pl.lastName} (${weeks}w)` });
+      }
     }
   }
   events.push({ minute: 90, type: 'fulltime', text: `Full-time: ${home.shortName} ${homeGoals}-${awayGoals} ${away.shortName}` });
@@ -159,6 +192,14 @@ export function simulateMatch(match: Match, state: GameState): Match {
   for (const p of awayXI) p.appearances++;
   for (const s of homeScorers) state.players[s.playerId].goals++;
   for (const s of awayScorers) state.players[s.playerId].goals++;
+  
+  // Increment assists
+  for (const e of events) {
+    if (e.type === 'goal' && e.assistId && state.players[e.assistId]) {
+      state.players[e.assistId].assists++;
+    }
+  }
+
   if (awayGoals === 0) for (const p of homeXI) if (positionGroup(p.position) === 'GK' || positionGroup(p.position) === 'DEF') p.cleanSheets++;
   if (homeGoals === 0) for (const p of awayXI) if (positionGroup(p.position) === 'GK' || positionGroup(p.position) === 'DEF') p.cleanSheets++;
 
@@ -229,8 +270,9 @@ export function createWorld(myClub: Club, myPlayers: Player[]): { clubs: Record<
   clubs[myClub.id] = myClub;
   for (const p of myPlayers) players[p.id] = p;
 
-  // Division 1: pick 19 presets (excluding any same-name)
-  const d1Presets = CLUB_PRESETS_D1.filter(p => p.name !== myClub.name).slice(0, 19);
+  // Division 1: pick presets (excluding any same-name)
+  const d1Count = myClub.division === 1 ? 19 : 20;
+  const d1Presets = CLUB_PRESETS_D1.filter(p => p.name !== myClub.name).slice(0, d1Count);
   for (let i = 0; i < d1Presets.length; i++) {
     const preset = d1Presets[i];
     const id = `c_d1_${i}`;
@@ -247,9 +289,11 @@ export function createWorld(myClub: Club, myPlayers: Player[]): { clubs: Record<
   const mySel = selectStartingXI(myClub, myPlayers);
   myClub.startingXI = mySel.startingXI; myClub.bench = mySel.bench;
 
-  // Division 2
-  for (let i = 0; i < 20; i++) {
-    const preset = CLUB_PRESETS_D2[i % CLUB_PRESETS_D2.length];
+  // Division 2: pick presets (excluding any same-name)
+  const d2Count = myClub.division === 2 ? 19 : 20;
+  const d2Presets = CLUB_PRESETS_D2.filter(p => p.name !== myClub.name).slice(0, d2Count);
+  for (let i = 0; i < d2Presets.length; i++) {
+    const preset = d2Presets[i];
     const id = `c_d2_${i}`;
     const strength = 58 + Math.floor(Math.random() * 8);
     const c: Club = makeClub(id, preset.name, preset.short, preset.badge, 2, strength);
@@ -262,7 +306,10 @@ export function createWorld(myClub: Club, myPlayers: Player[]): { clubs: Record<
   }
 
   const d1Ids = Object.values(clubs).filter(c => c.division === 1).map(c => c.id);
-  const fixtures = generateFixtures(d1Ids);
+  const d2Ids = Object.values(clubs).filter(c => c.division === 2).map(c => c.id);
+  const fixturesD1 = generateFixtures(d1Ids);
+  const fixturesD2 = generateFixtures(d2Ids);
+  const fixtures = [...fixturesD1, ...fixturesD2];
   return { clubs, players, fixtures };
 }
 
@@ -295,12 +342,72 @@ export function createMyClub(opts: { name: string; short: string; primaryColor: 
 }
 
 // ---- Season progression ----
-export function advanceWeek(state: GameState): GameState {
+export function applyMatchResult(state: GameState, match: Match): void {
+  const home = state.clubs[match.homeId];
+  const away = state.clubs[match.awayId];
+  if (!home || !away) return;
+
+  const homeXI = home.startingXI.map(id => state.players[id]).filter(Boolean);
+  const awayXI = away.startingXI.map(id => state.players[id]).filter(Boolean);
+
+  // Update appearances
+  for (const p of homeXI) p.appearances++;
+  for (const p of awayXI) p.appearances++;
+
+  // Update goals & assists & cards & injuries from events
+  if (match.events) {
+    for (const e of match.events) {
+      if (e.type === 'goal') {
+        if (e.playerId && state.players[e.playerId]) {
+          state.players[e.playerId].goals++;
+        }
+        if (e.assistId && state.players[e.assistId]) {
+          state.players[e.assistId].assists++;
+        }
+      } else if (e.type === 'yellow') {
+        if (e.playerId && state.players[e.playerId]) {
+          state.players[e.playerId].yellow++;
+        }
+      } else if (e.type === 'red') {
+        if (e.playerId && state.players[e.playerId]) {
+          state.players[e.playerId].red++;
+        }
+      } else if (e.type === 'injury') {
+        if (e.playerId && state.players[e.playerId]) {
+          state.players[e.playerId].injured = e.injuryWeeks ?? 1;
+        }
+      }
+    }
+  }
+
+  // Update clean sheets
+  if (match.awayGoals === 0) {
+    for (const p of homeXI) {
+      if (positionGroup(p.position) === 'GK' || positionGroup(p.position) === 'DEF') {
+        p.cleanSheets++;
+      }
+    }
+  }
+  if (match.homeGoals === 0) {
+    for (const p of awayXI) {
+      if (positionGroup(p.position) === 'GK' || positionGroup(p.position) === 'DEF') {
+        p.cleanSheets++;
+      }
+    }
+  }
+}
+
+export function advanceWeek(state: GameState, userMatchResult?: Match): GameState {
   const week = state.week;
   const weekFixtures = state.fixtures.filter(f => f.week === week && !f.played);
   for (const m of weekFixtures) {
-    const sim = simulateMatch(m, state);
-    Object.assign(m, sim);
+    if (userMatchResult && m.id === userMatchResult.id) {
+      applyMatchResult(state, userMatchResult);
+      Object.assign(m, userMatchResult);
+    } else {
+      const sim = simulateMatch(m, state);
+      Object.assign(m, sim);
+    }
   }
   // Wages each week
   const finances: FinanceEvent[] = [...state.finances];
@@ -321,6 +428,52 @@ export function advanceWeek(state: GameState): GameState {
     if (p.injured > 0) p.injured = Math.max(0, p.injured - 1);
     p.fitness = Math.min(100, p.fitness + 10);
   }
+
+  // AI purchases user players
+  const userListed = state.transferList.filter(l => l.listedBy === state.myClubId);
+  for (const listing of userListed) {
+    // 15% chance per week that an interested AI club buys the listed player
+    if (Math.random() < 0.15) {
+      const player = state.players[listing.playerId];
+      if (player) {
+        const buyerClubs = Object.values(state.clubs).filter(c => 
+          c.id !== state.myClubId && 
+          c.budget >= listing.askingPrice &&
+          c.reputation >= (player.overall >= 75 ? 3 : 2)
+        );
+        if (buyerClubs.length > 0) {
+          const buyer = pick(buyerClubs);
+          const seller = state.clubs[state.myClubId];
+          
+          buyer.budget -= listing.askingPrice;
+          seller.budget += listing.askingPrice;
+          seller.playerIds = seller.playerIds.filter(id => id !== player.id);
+          buyer.playerIds.push(player.id);
+          player.clubId = buyer.id;
+          
+          seller.startingXI = seller.startingXI.filter(id => id !== player.id);
+          seller.bench = seller.bench.filter(id => id !== player.id);
+          
+          // Recalculate starting XI and bench for AI buyer
+          const buyerSquad = buyer.playerIds.map(id => state.players[id]).filter(Boolean);
+          const buyerSel = selectStartingXI(buyer, buyerSquad);
+          buyer.startingXI = buyerSel.startingXI;
+          buyer.bench = buyerSel.bench;
+          
+          finances.push({
+            week,
+            type: 'transferOut',
+            amount: listing.askingPrice,
+            note: `Sold ${player.firstName} ${player.lastName} to ${buyer.name}`
+          });
+          
+          state.transferList = state.transferList.filter(l => l.playerId !== player.id);
+          break;
+        }
+      }
+    }
+  }
+
   // Standings
   const standings = computeStandings({ ...state, finances });
 
@@ -359,7 +512,10 @@ export function endSeason(state: GameState): GameState {
 
   // Reset fixtures for next season
   const d1Ids = Object.values(state.clubs).filter(c => c.division === 1).map(c => c.id);
-  const newFixtures = generateFixtures(d1Ids);
+  const d2Ids = Object.values(state.clubs).filter(c => c.division === 2).map(c => c.id);
+  const newFixturesD1 = generateFixtures(d1Ids);
+  const newFixturesD2 = generateFixtures(d2Ids);
+  const newFixtures = [...newFixturesD1, ...newFixturesD2];
 
   return { ...state, season: state.season + 1, week: 1, fixtures: newFixtures, standings: computeStandings({ ...state, fixtures: newFixtures }) };
 }
@@ -377,6 +533,17 @@ export function buyPlayer(state: GameState, playerId: string): { ok: boolean; re
   seller.playerIds = seller.playerIds.filter(id => id !== playerId);
   buyer.playerIds.push(playerId);
   player.clubId = buyer.id;
+
+  // Remove player from seller (AI) starting XI and bench
+  seller.startingXI = seller.startingXI.filter(id => id !== playerId);
+  seller.bench = seller.bench.filter(id => id !== playerId);
+
+  // Recalculate starting XI and bench for AI seller
+  const sellerSquad = seller.playerIds.map(id => state.players[id]).filter(Boolean);
+  const sellerSel = selectStartingXI(seller, sellerSquad);
+  seller.startingXI = sellerSel.startingXI;
+  seller.bench = sellerSel.bench;
+
   state.transferList = state.transferList.filter(l => l.playerId !== playerId);
   state.finances.push({ week: state.week, type: 'transferIn', amount: -listing.askingPrice, note: `Bought ${player.firstName} ${player.lastName}` });
   return { ok: true };
@@ -409,4 +576,40 @@ export function generateTransferMarket(state: GameState) {
 // ---- Top scorers / golden boot ----
 export function topScorers(state: GameState, limit = 10): Player[] {
   return Object.values(state.players).sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, limit);
+}
+
+// ---- Player swapping helper ----
+export function swapPlayers(state: GameState, idA: string, idB: string): void {
+  const playerA = state.players[idA];
+  const playerB = state.players[idB];
+  if (!playerA || !playerB || playerA.clubId !== playerB.clubId) return;
+  const club = state.clubs[playerA.clubId];
+  if (!club) return;
+
+  const idxA_xi = club.startingXI.indexOf(idA);
+  const idxA_bench = club.bench.indexOf(idA);
+  const idxB_xi = club.startingXI.indexOf(idB);
+  const idxB_bench = club.bench.indexOf(idB);
+
+  if (idxA_xi !== -1 && idxB_xi !== -1) {
+    club.startingXI[idxA_xi] = idB;
+    club.startingXI[idxB_xi] = idA;
+  } else if (idxA_bench !== -1 && idxB_bench !== -1) {
+    club.bench[idxA_bench] = idB;
+    club.bench[idxB_bench] = idA;
+  } else if (idxA_xi !== -1 && idxB_bench !== -1) {
+    club.startingXI[idxA_xi] = idB;
+    club.bench[idxB_bench] = idA;
+  } else if (idxA_bench !== -1 && idxB_xi !== -1) {
+    club.bench[idxA_bench] = idB;
+    club.startingXI[idxB_xi] = idA;
+  } else if (idxA_xi !== -1) {
+    club.startingXI[idxA_xi] = idB;
+  } else if (idxB_xi !== -1) {
+    club.startingXI[idxB_xi] = idA;
+  } else if (idxA_bench !== -1) {
+    club.bench[idxA_bench] = idB;
+  } else if (idxB_bench !== -1) {
+    club.bench[idxB_bench] = idA;
+  }
 }

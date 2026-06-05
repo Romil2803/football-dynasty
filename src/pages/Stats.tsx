@@ -5,12 +5,13 @@ export default function Stats() {
   const { state } = useGame();
   if (!state) return null;
 
-  const allPlayers = Object.values(state.players);
+  const myClub = state.clubs[state.myClubId];
+  const div = myClub.division;
+  const allPlayers = Object.values(state.players).filter(p => state.clubs[p.clubId]?.division === div);
   const scorers = [...allPlayers].sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, 15);
   const assists = [...allPlayers].sort((a, b) => b.assists - a.assists).slice(0, 15);
   const cleanSheets = [...allPlayers].filter(p => p.position === 'GK').sort((a, b) => b.cleanSheets - a.cleanSheets).slice(0, 15);
   const finances = state.finances.slice(-20).reverse();
-  const myClub = state.clubs[state.myClubId];
 
   return (
     <div className="p-4 space-y-3 animate-fade-in">

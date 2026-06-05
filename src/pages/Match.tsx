@@ -41,16 +41,22 @@ export default function MatchPage() {
     setMinute(0);
     setShownEvents([]);
     let i = 0;
+    let currentMin = 0;
     timerRef.current = window.setInterval(() => {
-      setMinute(m => {
-        const nm = m + 1;
-        while (i < (sim.events?.length ?? 0) && sim.events![i].minute <= nm) {
-          setShownEvents(arr => [sim.events![i], ...arr]);
-          i++;
-        }
-        if (nm >= 90) { if (timerRef.current) clearInterval(timerRef.current); setPlaying(false); commitResult(sim); }
-        return nm;
-      });
+      currentMin++;
+      setMinute(currentMin);
+      
+      while (i < (sim.events?.length ?? 0) && sim.events![i].minute <= currentMin) {
+        const event = sim.events![i];
+        setShownEvents(arr => [event, ...arr]);
+        i++;
+      }
+      
+      if (currentMin >= 90) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setPlaying(false);
+        commitResult(sim);
+      }
     }, 70) as unknown as number;
   };
 
@@ -68,7 +74,7 @@ export default function MatchPage() {
   const commitResult = (sim: Match) => {
     // Run the whole week through the engine for AI matches + stats consistency
     update(s => {
-      const advanced = advanceWeek(s);
+      const advanced = advanceWeek(s, sim);
       Object.assign(s, advanced);
       generateTransferMarket(s);
     });

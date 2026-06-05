@@ -7,8 +7,8 @@ export default function League() {
   const myClub = state.clubs[state.myClubId];
   const div = myClub.division;
   const standings = state.standings[div] ?? [];
-  const upcoming = state.fixtures.filter(f => !f.played).slice(0, 10);
-  const past = state.fixtures.filter(f => f.played).slice(-10).reverse();
+  const upcoming = state.fixtures.filter(f => !f.played && state.clubs[f.homeId]?.division === div).slice(0, 10);
+  const past = state.fixtures.filter(f => f.played && state.clubs[f.homeId]?.division === div).slice(-10).reverse();
 
   return (
     <div className="p-4 space-y-3 animate-fade-in">

@@ -4,7 +4,7 @@ import { PlayerRow } from '@/components/PlayerRow';
 import { PlayerDetailModal } from '@/components/PlayerDetailModal';
 import { Player } from '@/game/types';
 import { FORMATIONS } from '@/game/data';
-import { selectStartingXI, listPlayer } from '@/game/engine';
+import { selectStartingXI, listPlayer, swapPlayers } from '@/game/engine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,9 +13,25 @@ import { toast } from 'sonner';
 export default function Squad() {
   const { state, update } = useGame();
   const [selected, setSelected] = useState<Player | null>(null);
+  const [swapSourcePlayer, setSwapSourcePlayer] = useState<Player | null>(null);
   const [filter, setFilter] = useState('');
   const [posFilter, setPosFilter] = useState<string>('ALL');
   const [sort, setSort] = useState<'ovr'|'age'|'value'>('ovr');
+
+  const handlePlayerClick = (p: Player) => {
+    if (swapSourcePlayer) {
+      if (swapSourcePlayer.id === p.id) {
+        setSwapSourcePlayer(null);
+        toast.info('Swap cancelled');
+      } else {
+        update(s => swapPlayers(s, swapSourcePlayer.id, p.id));
+        toast.success(`Swapped ${swapSourcePlayer.lastName} and ${p.lastName}`);
+        setSwapSourcePlayer(null);
+      }
+    } else {
+      setSelected(p);
+    }
+  };
 
   if (!state) return null;
   const myClub = state.clubs[state.myClubId];
@@ -59,6 +75,17 @@ export default function Squad() {
 
   return (
     <div className="p-4 space-y-4 animate-fade-in">
+      {swapSourcePlayer && (
+        <div className="bg-primary/20 border border-primary/50 text-foreground rounded-xl p-3 flex items-center justify-between text-xs">
+          <span>
+            Swapping <strong>{swapSourcePlayer.firstName} {swapSourcePlayer.lastName}</strong>.
+            Click another player in the list to complete the swap.
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => setSwapSourcePlayer(null)} className="h-7 text-xs px-2">
+            Cancel
+          </Button>
+        </div>
+      )}
       <div className="glass rounded-xl p-3 flex items-center gap-2">
         <div className="text-xs text-muted-foreground">Formation</div>
         <Select value={myClub.formation} onValueChange={changeFormation}>
@@ -69,11 +96,11 @@ export default function Squad() {
       </div>
 
       <Section title={`Starting XI (${xi.length})`}>
-        {xi.map(p => <PlayerRow key={p.id} player={p} onClick={() => setSelected(p)} />)}
+        {xi.map(p => <PlayerRow key={p.id} player={p} onClick={() => handlePlayerClick(p)} />)}
       </Section>
 
       <Section title={`Bench (${bench.length})`}>
-        {bench.map(p => <PlayerRow key={p.id} player={p} onClick={() => setSelected(p)} />)}
+        {bench.map(p => <PlayerRow key={p.id} player={p} onClick={() => handlePlayerClick(p)} />)}
       </Section>
 
       <Section title={`Reserves (${reserves.length})`}>
@@ -95,14 +122,17 @@ export default function Squad() {
             </SelectContent>
           </Select>
         </div>
-        {filtered.map(p => <PlayerRow key={p.id} player={p} onClick={() => setSelected(p)} />)}
+        {filtered.map(p => <PlayerRow key={p.id} player={p} onClick={() => handlePlayerClick(p)} />)}
       </Section>
 
       <PlayerDetailModal player={selected} onClose={() => setSelected(null)}
         action={selected && selected.clubId === myClub.id ? (
-          <div className="grid grid-cols-2 gap-2 pt-3">
-            <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
-            <Button variant="destructive" onClick={() => listForSale(selected)}>List for Sale</Button>
+          <div className="flex flex-col gap-2 pt-3 border-t border-border/40 mt-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => { setSwapSourcePlayer(selected); setSelected(null); }}>Swap Position</Button>
+              <Button variant="destructive" onClick={() => listForSale(selected)}>List for Sale</Button>
+            </div>
+            <Button variant="ghost" onClick={() => setSelected(null)} className="w-full">Close</Button>
           </div>
         ) : undefined}
       />
