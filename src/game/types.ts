@@ -118,6 +118,8 @@ export interface FinanceEvent {
 export interface GameState {
   version: number;
   managerName: string;
+  managerNationality?: string;
+  managerFocus?: 'youth' | 'financial' | 'tactical';
   managerReputation: number; // 1-100
   boardConfidence: number; // 0-100
   isSacked: boolean;

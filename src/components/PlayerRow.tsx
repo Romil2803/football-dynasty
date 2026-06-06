@@ -1,5 +1,6 @@
 import { Player } from '@/game/types';
 import { cn } from '@/lib/utils';
+import { NATIONS_MAP } from '@/game/data';
 
 function ovrColor(o: number) {
   if (o >= 85) return 'bg-gradient-gold text-accent-foreground';
@@ -17,17 +18,11 @@ export function moraleEmoji(m: number) {
 
 export function Flag({ nationality }: { nationality: string }) {
   const code = nationality.replace(/[^a-zA-Z]/g, '').trim().toUpperCase();
-  const map: Record<string, string> = {
-    'ESP': 'es', 'GER': 'de', 'FRA': 'fr', 'ITA': 'it', 'ENG': 'gb-eng', 'BRA': 'br',
-    'ARG': 'ar', 'POR': 'pt', 'NED': 'nl', 'BEL': 'be', 'MEX': 'mx', 'USA': 'us',
-    'JPN': 'jp', 'KOR': 'kr', 'MAR': 'ma', 'CIV': 'ci', 'SEN': 'sn', 'NGA': 'ng',
-    'COL': 'co', 'URU': 'uy', 'SUI': 'ch', 'AUT': 'at', 'DEN': 'dk', 'SWE': 'se'
-  };
-  const c2 = map[code];
-  if (!c2) return <span>{nationality}</span>;
+  const nation = NATIONS_MAP[code];
+  if (!nation) return <span>{nationality}</span>;
   return (
-    <span className="flex items-center gap-1.5" title={code}>
-      <img src={`https://flagcdn.com/w20/${c2}.png`} alt={code} className="w-4 h-3 rounded-[2px] object-cover" />
+    <span className="flex items-center gap-1.5" title={nation.name}>
+      <img src={`https://flagcdn.com/w20/${nation.code2}.png`} alt={code} className="w-4 h-3 rounded-[2px] object-cover" />
       <span>{code}</span>
     </span>
   );
