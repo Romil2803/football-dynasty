@@ -49,6 +49,8 @@ function migrateState(s: unknown): GameState | null {
     }
   }
   if (stateObj.managerReputation === undefined) stateObj.managerReputation = 50;
+  if (stateObj.managerNationality === undefined) stateObj.managerNationality = '🇬🇧 ENG';
+  if (stateObj.managerFocus === undefined) stateObj.managerFocus = 'tactical';
   if (stateObj.boardConfidence === undefined) stateObj.boardConfidence = 50;
   if (stateObj.isSacked === undefined) stateObj.isSacked = false;
   return stateObj;

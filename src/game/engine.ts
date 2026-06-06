@@ -119,7 +119,7 @@ export function selectStartingXI(club: Club, players: Player[]): { startingXI: s
   return { startingXI: xi.map(p => p.id), bench: bench.map(p => p.id) };
 }
 
-export function teamRating(club: Club, players: Record<string, Player>, opponent?: Club): number {
+export function teamRating(club: Club, players: Record<string, Player>, opponent?: Club, managerFocus?: string): number {
   const xi = club.startingXI.map(id => players[id]).filter(Boolean);
   if (!xi.length) return 60;
   
@@ -149,6 +149,11 @@ export function teamRating(club: Club, players: Record<string, Player>, opponent
     }
     if (p.morale < 30) synergyBoost -= 0.3;
   }
+  
+  if (club.id === 'my_club' && managerFocus === 'tactical') {
+    synergyBoost += 2.0;
+  }
+
   synergyBoost = Math.max(-3, Math.min(3, synergyBoost));
 
   return avg + moraleBoost + synergyBoost;
@@ -171,8 +176,8 @@ export function simulateMatch(match: Match, state: GameState): Match {
   const away = state.clubs[match.awayId];
   const homeXI = home.startingXI.map(id => state.players[id]).filter(Boolean);
   const awayXI = away.startingXI.map(id => state.players[id]).filter(Boolean);
-  const homeR = teamRating(home, state.players, away) + 3; // home advantage
-  const awayR = teamRating(away, state.players, home);
+  const homeR = teamRating(home, state.players, away, state.managerFocus) + 3; // home advantage
+  const awayR = teamRating(away, state.players, home, state.managerFocus);
 
   const events: MatchEvent[] = [{ minute: 0, type: 'kickoff', text: `Kick-off at ${home.stadium}` }];
   const homeScorers: { playerId: string; minute: number }[] = [];
@@ -377,26 +382,53 @@ function makeClub(id: string, name: string, short: string, badge: string, divisi
   };
 }
 
-export function createMyClub(opts: { name: string; short: string; primaryColor: string; secondaryColor: string; badge: string; stadium: string; useExisting?: boolean; division: number }): { club: Club; players: Player[] } {
+export function createMyClub(opts: {
+  name: string;
+  short: string;
+  primaryColor: string;
+  secondaryColor: string;
+  badge: string;
+  stadium: string;
+  useExisting?: boolean;
+  division: number;
+  financialBoost?: 'none' | 'local' | 'takeover';
+  managerFocus?: 'youth' | 'financial' | 'tactical';
+}): { club: Club; players: Player[] } {
   const id = 'my_club';
+  
+  let baseBudget = opts.division === 1 ? 60_000_000 : 12_000_000;
+  if (opts.financialBoost === 'local') baseBudget += 10_000_000;
+  else if (opts.financialBoost === 'takeover') baseBudget += 50_000_000;
+  
+  if (opts.managerFocus === 'financial') {
+    baseBudget = Math.floor(baseBudget * 1.2);
+  }
+
+  const academyLevel = opts.managerFocus === 'youth' ? 2 : 1;
+
   const club: Club = {
     id, name: opts.name, shortName: opts.short || opts.name.slice(0,3).toUpperCase(),
     primaryColor: opts.primaryColor, secondaryColor: opts.secondaryColor, badge: opts.badge,
     stadium: opts.stadium || `${opts.name} Stadium`,
     reputation: opts.division === 1 ? 3 : 2,
-    budget: opts.division === 1 ? 60_000_000 : 12_000_000,
-    wageBudget: opts.division === 1 ? 8_000_000 : 2_000_000,
+    budget: baseBudget,
+    wageBudget: baseBudget / 8,
     division: opts.division,
-    playerIds: [], formation: '4-3-3', startingXI: [], bench: [], academyLevel: 1, youthIds: [],
+    playerIds: [], formation: '4-3-3', startingXI: [], bench: [], academyLevel, youthIds: [],
   };
   const strength = opts.division === 1 ? 72 : 64;
   const players = generateSquad(id, strength);
 
   // Generate initial youth players
   const youthCount = rng(2, 3);
-  const youthStrength = (opts.division === 1 ? 55 : 48) + 3; // academyLevel 1
+  let youthStrength = (opts.division === 1 ? 55 : 48) + academyLevel * 3;
+  if (opts.managerFocus === 'youth') youthStrength += 3;
+  
   for (let i = 0; i < youthCount; i++) {
     const p = generatePlayer(id, { minOvr: youthStrength - 10, maxOvr: youthStrength, age: rng(15, 17) });
+    if (opts.managerFocus === 'youth') {
+      p.potential = Math.min(99, p.potential + 3);
+    }
     players.push(p);
     club.youthIds.push(p.id);
   }
@@ -889,6 +921,10 @@ export function extendContract(state: GameState, playerId: string): { ok: boolea
   if (p.personality) {
     if (p.personality.loyalty > 80) wageDemand = Math.floor(wageDemand * 0.8);
     else if (p.personality.ego > 80 || p.personality.ambition > 80) wageDemand = Math.floor(wageDemand * 1.3);
+  }
+  
+  if (state.managerFocus === 'financial') {
+    wageDemand = Math.floor(wageDemand * 0.95);
   }
   
   if (club.budget < wageDemand * 52) {

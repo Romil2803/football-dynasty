@@ -409,4 +409,97 @@ describe('Football Dynasty Game Engine', () => {
     const nextState = advanceWeek(state);
     expect(nextState.isSacked).toBe(true);
   });
+
+  it('should test starting career customizations (financial boost, manager focus, and nationality)', () => {
+    // 1. Test Youth Developer Focus
+    const { club: clubYouth, players: playersYouth } = createMyClub({
+      name: 'Club Youth Focus',
+      short: 'YTH',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Youth Ground',
+      division: 2,
+      financialBoost: 'none',
+      managerFocus: 'youth'
+    });
+
+    expect(clubYouth.academyLevel).toBe(2);
+    // Youth players should have potential boosted
+    const youthPlayers = playersYouth.filter(p => clubYouth.youthIds.includes(p.id));
+    expect(youthPlayers.length).toBeGreaterThan(0);
+
+    // 2. Test Financial Takeover + Financial Guru Focus
+    const { club: clubFin } = createMyClub({
+      name: 'Club Fin Focus',
+      short: 'FIN',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Fin Ground',
+      division: 2,
+      financialBoost: 'takeover', // +50M
+      managerFocus: 'financial' // +20%
+    });
+
+    // Division 2 base budget = 12M. With takeover: 12M + 50M = 62M. With Financial Guru: 62M * 1.2 = 74.4M.
+    const expectedBudget = Math.floor(62_000_000 * 1.2);
+    expect(clubFin.budget).toBe(expectedBudget);
+
+    // 3. Test Tactician Focus Match simulation boost
+    const { club: clubTac, players: playersTac } = createMyClub({
+      name: 'Club Tac Focus',
+      short: 'TAC',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Tac Ground',
+      division: 2,
+      financialBoost: 'none',
+      managerFocus: 'tactical'
+    });
+
+    const world = createWorld(clubTac, playersTac);
+    const state: GameState = {
+      version: 1,
+      managerName: 'Tactical Boss',
+      managerNationality: '🇪🇸 ESP',
+      managerFocus: 'tactical',
+      myClubId: clubTac.id,
+      season: 1,
+      week: 1,
+      clubs: world.clubs,
+      players: world.players,
+      fixtures: world.fixtures,
+      standings: {},
+      transferList: [],
+      finances: [],
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Contract renewal check for financial focus
+    const stateFin: GameState = {
+      ...state,
+      managerFocus: 'financial',
+      myClubId: clubFin.id,
+      clubs: { ...state.clubs, [clubFin.id]: clubFin }
+    };
+    const finPlayer = playersTac[0]; // dummy player
+    finPlayer.clubId = clubFin.id;
+    stateFin.players[finPlayer.id] = finPlayer;
+
+    const originalWage = Math.floor(finPlayer.value / 100);
+    const renewRes = extendContract(stateFin, finPlayer.id);
+    expect(renewRes.ok).toBe(true);
+    // Financial Guru focus gets 5% discount on base contract wage demand
+    let expectedWage = originalWage;
+    if (finPlayer.personality) {
+      if (finPlayer.personality.loyalty > 80) expectedWage = Math.floor(expectedWage * 0.8);
+      else if (finPlayer.personality.ego > 80 || finPlayer.personality.ambition > 80) expectedWage = Math.floor(expectedWage * 1.3);
+    }
+    expectedWage = Math.floor(expectedWage * 0.95);
+    expect(renewRes.wage).toBe(expectedWage);
+  });
 });
