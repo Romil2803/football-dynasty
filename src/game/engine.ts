@@ -1,4 +1,4 @@
-import { Club, FinanceEvent, GameState, LeagueRow, Match, MatchEvent, Player, Position, PositionGroup } from './types';
+import { Club, FinanceEvent, GameState, LeagueRow, Match, MatchEvent, Player, PlayerPersonality, Position, PositionGroup } from './types';
 import { BADGES, CLUB_PRESETS_D1, CLUB_PRESETS_D2, COLORS, FIRST_NAMES, FORMATIONS, LAST_NAMES, NATIONS } from './data';
 
 const uid = () => Math.random().toString(36).slice(2, 11);
@@ -30,6 +30,31 @@ function statsForPosition(pos: Position, overall: number): Player['stats'] {
   }
 }
 
+export function generatePersonality(age: number, overall: number): PlayerPersonality {
+  const loyalty = rng(10, 99);
+  const ambition = rng(10, 99);
+  const professionalism = rng(10, 99);
+  const leadership = age > 25 ? rng(40, 99) : rng(10, 60);
+  const temperament = rng(10, 99);
+  const ego = rng(10, 99);
+  const consistency = rng(10, 99);
+  const bigMatch = rng(10, 99);
+
+  let archetype = 'Balanced';
+  
+  if (age <= 21 && overall >= 75) archetype = 'Wonderkid';
+  else if (loyalty > 85 && professionalism > 80) archetype = 'Model Professional';
+  else if (leadership > 85 && age >= 26) archetype = 'Team Leader';
+  else if (loyalty > 80 && age >= 28) archetype = 'Loyal Servant';
+  else if (ambition > 85 && loyalty < 40) archetype = 'Mercenary';
+  else if (ego > 85 && overall > 80) archetype = 'Superstar';
+  else if (temperament < 30 && ego > 70) archetype = 'Troublemaker';
+  else if (professionalism > 80 && ego < 40) archetype = 'Silent Worker';
+  else if (consistency > 85) archetype = 'Consistent Performer';
+
+  return { loyalty, ambition, professionalism, leadership, temperament, ego, consistency, bigMatch, archetype };
+}
+
 export function generatePlayer(clubId: string, opts: { position?: Position; minOvr?: number; maxOvr?: number; age?: number } = {}): Player {
   const position = opts.position ?? pick<Position>(['GK','CB','LB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST']);
   const age = opts.age ?? rng(17, 34);
@@ -50,6 +75,7 @@ export function generatePlayer(clubId: string, opts: { position?: Position; minO
     wage,
     contractYears: rng(1, 5),
     stats: statsForPosition(position, overall),
+    personality: generatePersonality(age, overall),
     morale: rng(60, 90),
     fitness: 100,
     injured: 0,
@@ -93,12 +119,39 @@ export function selectStartingXI(club: Club, players: Player[]): { startingXI: s
   return { startingXI: xi.map(p => p.id), bench: bench.map(p => p.id) };
 }
 
-export function teamRating(club: Club, players: Record<string, Player>): number {
+export function teamRating(club: Club, players: Record<string, Player>, opponent?: Club): number {
   const xi = club.startingXI.map(id => players[id]).filter(Boolean);
   if (!xi.length) return 60;
-  const avg = xi.reduce((s, p) => s + p.overall, 0) / xi.length;
+  
+  let totalOvr = 0;
+  for (const p of xi) {
+    let ovr = p.overall;
+    if (p.personality) {
+      const variance = (100 - p.personality.consistency) / 10;
+      ovr += rng(-Math.floor(variance), Math.floor(variance / 2));
+      
+      if (opponent && opponent.reputation > club.reputation) {
+        if (p.personality.bigMatch > 75) ovr += 2;
+        else if (p.personality.bigMatch < 30) ovr -= 2;
+      }
+    }
+    totalOvr += ovr;
+  }
+  const avg = totalOvr / xi.length;
   const moraleBoost = xi.reduce((s, p) => s + p.morale, 0) / xi.length / 100 * 5 - 2.5;
-  return avg + moraleBoost;
+  
+  let synergyBoost = 0;
+  for (const p of xi) {
+    if (p.personality) {
+      if (p.personality.archetype === 'Team Leader') synergyBoost += 0.5;
+      else if (p.personality.archetype === 'Model Professional') synergyBoost += 0.2;
+      else if (p.personality.archetype === 'Troublemaker') synergyBoost -= 0.5;
+    }
+    if (p.morale < 30) synergyBoost -= 0.3;
+  }
+  synergyBoost = Math.max(-3, Math.min(3, synergyBoost));
+
+  return avg + moraleBoost + synergyBoost;
 }
 
 // ---- Match Engine ----
@@ -118,8 +171,8 @@ export function simulateMatch(match: Match, state: GameState): Match {
   const away = state.clubs[match.awayId];
   const homeXI = home.startingXI.map(id => state.players[id]).filter(Boolean);
   const awayXI = away.startingXI.map(id => state.players[id]).filter(Boolean);
-  const homeR = teamRating(home, state.players) + 3; // home advantage
-  const awayR = teamRating(away, state.players);
+  const homeR = teamRating(home, state.players, away) + 3; // home advantage
+  const awayR = teamRating(away, state.players, home);
 
   const events: MatchEvent[] = [{ minute: 0, type: 'kickoff', text: `Kick-off at ${home.stadium}` }];
   const homeScorers: { playerId: string; minute: number }[] = [];
@@ -320,7 +373,7 @@ function makeClub(id: string, name: string, short: string, badge: string, divisi
     id, name, shortName: short, primaryColor: col.primary, secondaryColor: col.secondary,
     badge, stadium: `${name.split(' ')[0]} Arena`, reputation: division === 1 ? Math.min(5, Math.max(1, Math.round(strength/16))) : 2,
     budget, wageBudget: budget / 8, division,
-    playerIds: [], formation: '4-3-3', startingXI: [], bench: [],
+    playerIds: [], formation: '4-3-3', startingXI: [], bench: [], academyLevel: 1, youthIds: [],
   };
 }
 
@@ -334,10 +387,20 @@ export function createMyClub(opts: { name: string; short: string; primaryColor: 
     budget: opts.division === 1 ? 60_000_000 : 12_000_000,
     wageBudget: opts.division === 1 ? 8_000_000 : 2_000_000,
     division: opts.division,
-    playerIds: [], formation: '4-3-3', startingXI: [], bench: [],
+    playerIds: [], formation: '4-3-3', startingXI: [], bench: [], academyLevel: 1, youthIds: [],
   };
   const strength = opts.division === 1 ? 72 : 64;
   const players = generateSquad(id, strength);
+
+  // Generate initial youth players
+  const youthCount = rng(2, 3);
+  const youthStrength = (opts.division === 1 ? 55 : 48) + 3; // academyLevel 1
+  for (let i = 0; i < youthCount; i++) {
+    const p = generatePlayer(id, { minOvr: youthStrength - 10, maxOvr: youthStrength, age: rng(15, 17) });
+    players.push(p);
+    club.youthIds.push(p.id);
+  }
+
   return { club, players };
 }
 
@@ -409,6 +472,76 @@ export function advanceWeek(state: GameState, userMatchResult?: Match): GameStat
       Object.assign(m, sim);
     }
   }
+  // Morale & Playing Time updates
+  for (const club of Object.values(state.clubs)) {
+    const xiIds = new Set(club.startingXI);
+    const benchIds = new Set(club.bench);
+    
+    // Find if club played
+    const match = weekFixtures.find(m => m.homeId === club.id || m.awayId === club.id);
+    let matchResult = 0; // 0=draw/none, 1=win, -1=loss
+    if (match && match.played) {
+      if (match.homeId === club.id) {
+        matchResult = match.homeGoals! > match.awayGoals! ? 1 : match.homeGoals! < match.awayGoals! ? -1 : 0;
+      } else {
+        matchResult = match.awayGoals! > match.homeGoals! ? 1 : match.awayGoals! < match.homeGoals! ? -1 : 0;
+      }
+    }
+
+    // Dressing room influence
+    const leaderCount = club.playerIds.filter(id => state.players[id]?.personality?.leadership > 75).length;
+    const toxicCount = club.playerIds.filter(id => state.players[id]?.personality?.temperament < 40).length;
+
+    for (const pId of club.playerIds) {
+      const p = state.players[pId];
+      if (!p || !p.personality) continue;
+      
+      let shift = 0;
+      
+      // Playing time expectation
+      if (xiIds.has(p.id)) {
+        shift += 1;
+      } else if (benchIds.has(p.id)) {
+        if (p.personality.ego > 75 || p.overall > 80) shift -= 1;
+      } else {
+        // Reserves
+        if (p.personality.archetype === 'Model Professional' || p.personality.archetype === 'Loyal Servant') shift -= 1;
+        else if (p.personality.archetype === 'Troublemaker' || p.personality.ego > 80) shift -= 4;
+        else if (p.overall > 75) shift -= 3;
+        else shift -= 2;
+      }
+      
+      // Match result reaction
+      if (matchResult === 1) {
+        shift += 2 + Math.min(2, leaderCount * 0.5);
+      } else if (matchResult === -1) {
+        let penalty = 2;
+        if (p.personality.archetype === 'Consistent Performer' || p.personality.archetype === 'Model Professional') penalty = 1;
+        else if (p.personality.archetype === 'Troublemaker' || p.personality.temperament < 40) penalty = 4;
+        
+        penalty = Math.max(1, penalty - leaderCount * 0.5 + toxicCount * 0.5);
+        shift -= penalty;
+      }
+      
+      // Transfer Demands
+      if (p.personality.ambition > 75 && p.personality.loyalty < 40 && p.overall > 75) {
+        if (club.division === 2 || club.reputation <= 3) {
+           shift -= 2; // Unsettled
+        }
+      }
+
+      p.morale = Math.max(0, Math.min(100, p.morale + shift));
+
+      // Force transfer list if extremely unhappy
+      if (p.morale < 15) {
+        if (!state.transferList.find(l => l.playerId === p.id)) {
+          const price = Math.floor(p.value * 0.7); // 30% discount if forcing move
+          listPlayer(state, p.id, price);
+        }
+      }
+    }
+  }
+
   // Wages each week
   const finances: FinanceEvent[] = [...state.finances];
   const myClub = state.clubs[state.myClubId];
@@ -477,8 +610,54 @@ export function advanceWeek(state: GameState, userMatchResult?: Match): GameStat
   // Standings
   const standings = computeStandings({ ...state, finances });
 
+  // Board Confidence (for user club only)
+  let newBoardConf = state.boardConfidence ?? 50;
+  let isSacked = state.isSacked ?? false;
+  
+  if (!isSacked) {
+    const myDivisionStandings = standings[myClub.division] ?? [];
+    const myRank = myDivisionStandings.findIndex(r => r.clubId === myClub.id) + 1;
+    
+    // Calculate expected position
+    const rep = myClub.reputation;
+    let expectedPos = 17;
+    if (rep >= 5) expectedPos = 3;
+    else if (rep === 4) expectedPos = 6;
+    else if (rep === 3) expectedPos = 12;
+
+    // Shift based on position vs expected
+    if (myRank <= expectedPos) {
+      newBoardConf += 1;
+    } else {
+      const diff = myRank - expectedPos;
+      newBoardConf -= (diff * 0.3); // Punish based on how far below we are
+    }
+
+    // Shift based on match result (if played)
+    if (myMatch && myMatch.played) {
+      const isHome = myMatch.homeId === myClub.id;
+      const gf = isHome ? myMatch.homeGoals! : myMatch.awayGoals!;
+      const ga = isHome ? myMatch.awayGoals! : myMatch.homeGoals!;
+      if (gf > ga) newBoardConf += 2;
+      else if (gf < ga) newBoardConf -= 3;
+      else newBoardConf -= 0.5;
+    }
+
+    // Apply toxic squad penalty if morale is very low
+    const myPlayers = myClub.playerIds.map(id => state.players[id]).filter(Boolean);
+    const avgMorale = myPlayers.reduce((s, p) => s + p.morale, 0) / (myPlayers.length || 1);
+    if (avgMorale < 40) newBoardConf -= 2;
+
+    newBoardConf = Math.max(0, Math.min(100, newBoardConf));
+
+    // Check for sacking (only after 5 weeks so we don't sack instantly on bad start)
+    if (newBoardConf < 15 && week > 5) {
+      isSacked = true;
+    }
+  }
+
   const newWeek = week + 1;
-  return { ...state, week: newWeek, standings, finances, updatedAt: new Date().toISOString() };
+  return { ...state, week: newWeek, standings, finances, boardConfidence: newBoardConf, isSacked, updatedAt: new Date().toISOString() };
 }
 
 export function endSeason(state: GameState): GameState {
@@ -487,22 +666,107 @@ export function endSeason(state: GameState): GameState {
   const champion = d1[0] ? state.clubs[d1[0].clubId].name : '—';
   // Top scorer
   const topPlayer = Object.values(state.players).sort((a, b) => b.goals - a.goals)[0];
-  const myRow = d1.find(r => r.clubId === state.myClubId);
-  const myPos = myRow ? d1.indexOf(myRow) + 1 : 0;
+  let myRow = d1.find(r => r.clubId === state.myClubId);
+  let myPos = myRow ? d1.indexOf(myRow) + 1 : 0;
+  let inD1 = true;
+  if (!myRow) {
+    const d2 = standings[2] ?? [];
+    myRow = d2.find(r => r.clubId === state.myClubId);
+    myPos = myRow ? d2.indexOf(myRow) + 1 : 0;
+    inD1 = false;
+  }
+
+  // Manager Reputation Change
+  let repChange = 0;
+  if (myPos > 0 && !state.isSacked) {
+    const rep = state.clubs[state.myClubId].reputation;
+    let expectedPos = 17;
+    if (rep >= 5) expectedPos = 3;
+    else if (rep === 4) expectedPos = 6;
+    else if (rep === 3) expectedPos = 12;
+    
+    if (myPos === 1) repChange += 5;
+    if (myPos <= expectedPos) repChange += 2;
+    else {
+      const diff = myPos - expectedPos;
+      repChange -= Math.min(10, Math.floor(diff / 2));
+    }
+  }
+  const managerReputation = Math.max(1, Math.min(100, (state.managerReputation ?? 50) + repChange));
+  const boardConfidence = state.isSacked ? 50 : 60;
+
   // Prize money
   if (myRow) {
-    const prize = Math.max(2_000_000, (21 - myPos) * 1_500_000);
+    const prize = Math.max(2_000_000, (21 - myPos) * (inD1 ? 1_500_000 : 500_000));
     state.clubs[state.myClubId].budget += prize;
     state.finances.push({ week: state.week, type: 'prizeMoney', amount: prize, note: `Position ${myPos}` });
   }
-  // Age players, reset stats, refresh contracts
+  // Age players, reset stats, refresh contracts, handle retirements
+  const retiringIds = new Set<string>();
   for (const p of Object.values(state.players)) {
     p.age++;
     p.goals = 0; p.assists = 0; p.appearances = 0; p.cleanSheets = 0; p.yellow = 0; p.red = 0;
-    if (p.age < 25 && p.overall < p.potential) p.overall = Math.min(p.potential, p.overall + rng(0, 2));
-    if (p.age > 30) p.overall = Math.max(50, p.overall - rng(0, 2));
+    let growthRate = 1;
+    let declineRate = 1;
+    if (p.personality) {
+      if (p.personality.professionalism > 80) { growthRate += 0.5; declineRate -= 0.5; }
+      else if (p.personality.professionalism < 30) { growthRate -= 0.5; declineRate += 0.5; }
+      
+      if (p.personality.ambition > 80) growthRate += 0.3;
+      else if (p.personality.ambition < 30) growthRate -= 0.3;
+    }
+
+    if (p.age < 25 && p.overall < p.potential) {
+      const growth = rng(0, 2);
+      if (growth > 0 && Math.random() < growthRate) p.overall = Math.min(p.potential, p.overall + growth);
+    }
+    if (p.age > 30) {
+      const decline = rng(0, 2);
+      if (decline > 0 && Math.random() < declineRate) p.overall = Math.max(50, p.overall - decline);
+    }
     p.value = Math.floor((p.overall ** 3) / 18) * 1000 * (p.age < 25 ? 1.4 : p.age > 30 ? 0.5 : 1);
     p.contractYears = Math.max(0, p.contractYears - 1);
+    
+    if (p.age > 34 && Math.random() < 0.3) retiringIds.add(p.id);
+    else if (p.age > 38) retiringIds.add(p.id);
+  }
+
+  // Remove retiring players
+  for (const id of retiringIds) {
+    const clubId = state.players[id].clubId;
+    if (state.clubs[clubId]) {
+      const c = state.clubs[clubId];
+      c.playerIds = c.playerIds.filter(pid => pid !== id);
+      c.startingXI = c.startingXI.filter(pid => pid !== id);
+      c.bench = c.bench.filter(pid => pid !== id);
+    }
+    delete state.players[id];
+    state.transferList = state.transferList.filter(l => l.playerId !== id);
+  }
+
+  // Generate Youth Players
+  for (const c of Object.values(state.clubs)) {
+    const count = rng(2, 3);
+    const strength = (c.division === 1 ? 55 : 48) + (c.academyLevel || 1) * 3;
+    
+    for (let i = 0; i < count; i++) {
+      const p = generatePlayer(c.id, { minOvr: strength - 10, maxOvr: strength, age: rng(15, 17) });
+      state.players[p.id] = p;
+      if (c.id === state.myClubId) {
+        if (!c.youthIds) c.youthIds = [];
+        c.youthIds.push(p.id);
+      } else {
+        c.playerIds.push(p.id);
+      }
+    }
+    
+    // Recalculate AI squad to account for retirements and new youths
+    if (c.id !== state.myClubId) {
+       const squad = c.playerIds.map(id => state.players[id]).filter(Boolean);
+       const sel = selectStartingXI(c, squad);
+       c.startingXI = sel.startingXI;
+       c.bench = sel.bench;
+    }
   }
   // History
   state.history.push({
@@ -517,7 +781,7 @@ export function endSeason(state: GameState): GameState {
   const newFixturesD2 = generateFixtures(d2Ids);
   const newFixtures = [...newFixturesD1, ...newFixturesD2];
 
-  return { ...state, season: state.season + 1, week: 1, fixtures: newFixtures, standings: computeStandings({ ...state, fixtures: newFixtures }) };
+  return { ...state, season: state.season + 1, week: 1, fixtures: newFixtures, standings: computeStandings({ ...state, fixtures: newFixtures }), managerReputation, boardConfidence };
 }
 
 // ---- Transfers ----
@@ -612,4 +876,26 @@ export function swapPlayers(state: GameState, idA: string, idB: string): void {
   } else if (idxB_bench !== -1) {
     club.bench[idxB_bench] = idA;
   }
+}
+
+// ---- Contract Extensions ----
+export function extendContract(state: GameState, playerId: string): { ok: boolean; error?: string; wage?: number } {
+  const p = state.players[playerId];
+  if (!p) return { ok: false, error: 'Player not found' };
+  const club = state.clubs[p.clubId];
+  if (!club) return { ok: false, error: 'Club not found' };
+  
+  let wageDemand = Math.floor(p.value / 100);
+  if (p.personality) {
+    if (p.personality.loyalty > 80) wageDemand = Math.floor(wageDemand * 0.8);
+    else if (p.personality.ego > 80 || p.personality.ambition > 80) wageDemand = Math.floor(wageDemand * 1.3);
+  }
+  
+  if (club.budget < wageDemand * 52) {
+    return { ok: false, error: `Cannot afford contract of €${wageDemand.toLocaleString()}/week.` };
+  }
+  
+  p.contractYears = 3;
+  p.wage = wageDemand;
+  return { ok: true, wage: wageDemand };
 }

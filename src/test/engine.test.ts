@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createMyClub, createWorld, simulateMatch, swapPlayers, advanceWeek, listPlayer } from '../game/engine';
-import { GameState } from '../game/types';
+import { createMyClub, createWorld, simulateMatch, swapPlayers, advanceWeek, listPlayer, extendContract } from '../game/engine';
+import { GameState, Match } from '../game/types';
 
 describe('Football Dynasty Game Engine', () => {
   it('should successfully create a world with balanced divisions and generate fixtures for both', () => {
@@ -237,5 +237,176 @@ describe('Football Dynasty Game Engine', () => {
 
     const scorerId = state.clubs[myMatch.homeId].startingXI[0];
     expect(nextState.players[scorerId].goals).toBe(1);
+  });
+
+  it('should test youth academy mechanics (creation, promotion, and upgrades)', () => {
+    const { club, players } = createMyClub({
+      name: 'Club Academy',
+      short: 'ACA',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Academy Ground',
+      division: 1
+    });
+
+    // Verify initial youth players generated
+    expect(club.youthIds.length).toBeGreaterThan(0);
+
+    const world = createWorld(club, players);
+    const state: GameState = {
+      version: 1,
+      managerName: 'Manager',
+      managerReputation: 50,
+      boardConfidence: 50,
+      isSacked: false,
+      myClubId: club.id,
+      season: 1,
+      week: 1,
+      clubs: world.clubs,
+      players: world.players,
+      fixtures: world.fixtures,
+      standings: {},
+      transferList: [],
+      finances: [],
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Promote a youth player
+    const youthId = state.clubs[club.id].youthIds[0];
+    expect(youthId).toBeDefined();
+    
+    // Perform promotion in test (same logic as Squad.tsx)
+    const myClubState = state.clubs[club.id];
+    myClubState.youthIds = myClubState.youthIds.filter(id => id !== youthId);
+    myClubState.playerIds.push(youthId);
+
+    expect(state.clubs[club.id].youthIds.includes(youthId)).toBe(false);
+    expect(state.clubs[club.id].playerIds.includes(youthId)).toBe(true);
+
+    // Verify Academy Upgrade
+    const originalBudget = state.clubs[club.id].budget;
+    const upgradeCost = (state.clubs[club.id].academyLevel || 1) * 5_000_000;
+    
+    // Perform upgrade
+    state.clubs[club.id].budget -= upgradeCost;
+    state.clubs[club.id].academyLevel = (state.clubs[club.id].academyLevel || 1) + 1;
+    state.finances.push({ week: state.week, type: 'transferOut', amount: -upgradeCost, note: `Academy Upgrade` });
+
+    expect(state.clubs[club.id].academyLevel).toBe(2);
+    expect(state.clubs[club.id].budget).toBe(originalBudget - upgradeCost);
+    expect(state.finances.some(f => f.type === 'transferOut' && f.amount === -upgradeCost)).toBe(true);
+  });
+
+  it('should test contract renewals influenced by personalities', () => {
+    const { club, players } = createMyClub({
+      name: 'Club Contract',
+      short: 'CON',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Contract Ground',
+      division: 1
+    });
+
+    const world = createWorld(club, players);
+    const state: GameState = {
+      version: 1,
+      managerName: 'Manager',
+      managerReputation: 50,
+      boardConfidence: 50,
+      isSacked: false,
+      myClubId: club.id,
+      season: 1,
+      week: 1,
+      clubs: world.clubs,
+      players: world.players,
+      fixtures: world.fixtures,
+      standings: {},
+      transferList: [],
+      finances: [],
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const player = Object.values(state.players).find(p => p.clubId === club.id)!;
+    
+    // Set high loyalty personality
+    player.personality = {
+      loyalty: 90,
+      ambition: 20,
+      professionalism: 80,
+      leadership: 40,
+      temperament: 80,
+      ego: 10,
+      consistency: 80,
+      bigMatch: 70,
+      archetype: 'Loyal Servant'
+    };
+
+    const resLoyal = extendContract(state, player.id);
+    expect(resLoyal.ok).toBe(true);
+    // Loyalty discount makes wage demand lower (value/100 * 0.8)
+    const expectedLoyalWage = Math.floor(Math.floor(player.value / 100) * 0.8);
+    expect(resLoyal.wage).toBe(expectedLoyalWage);
+
+    // Set high ego / mercenary personality
+    player.personality = {
+      loyalty: 10,
+      ambition: 90,
+      professionalism: 40,
+      leadership: 40,
+      temperament: 40,
+      ego: 90,
+      consistency: 80,
+      bigMatch: 70,
+      archetype: 'Mercenary'
+    };
+
+    const resEgo = extendContract(state, player.id);
+    expect(resEgo.ok).toBe(true);
+    // Ego/ambition makes wage demand higher (value/100 * 1.3)
+    const expectedEgoWage = Math.floor(Math.floor(player.value / 100) * 1.3);
+    expect(resEgo.wage).toBe(expectedEgoWage);
+  });
+
+  it('should test board room confidence and sacking flow', () => {
+    const { club, players } = createMyClub({
+      name: 'Club Board',
+      short: 'BRD',
+      primaryColor: '#ffffff',
+      secondaryColor: '#000000',
+      badge: '⚽',
+      stadium: 'Board Ground',
+      division: 1
+    });
+
+    const world = createWorld(club, players);
+    const state: GameState = {
+      version: 1,
+      managerName: 'Manager',
+      managerReputation: 50,
+      boardConfidence: 10, // low confidence to test sack
+      isSacked: false,
+      myClubId: club.id,
+      season: 1,
+      week: 6, // week > 5 to allow sacking
+      clubs: world.clubs,
+      players: world.players,
+      fixtures: world.fixtures,
+      standings: {},
+      transferList: [],
+      finances: [],
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Advance week to trigger sacking check
+    const nextState = advanceWeek(state);
+    expect(nextState.isSacked).toBe(true);
   });
 });

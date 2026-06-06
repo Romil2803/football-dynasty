@@ -17,13 +17,17 @@ export default function Transfers() {
   const [pos, setPos] = useState('ALL');
   const [sort, setSort] = useState<'price'|'ovr'|'age'>('ovr');
 
-  if (!state) return null;
-  const myClub = state.clubs[state.myClubId];
+  const myClub = state?.clubs[state?.myClubId];
 
-  const listed = useMemo(() => state.transferList
-    .filter(l => state.players[l.playerId])
-    .map(l => ({ player: state.players[l.playerId], price: l.askingPrice }))
-    .filter(({ player }) => player.clubId !== myClub.id), [state, myClub.id]);
+  const listed = useMemo(() => {
+    if (!state || !myClub) return [];
+    return state.transferList
+      .filter(l => state.players[l.playerId])
+      .map(l => ({ player: state.players[l.playerId], price: l.askingPrice }))
+      .filter(({ player }) => player.clubId !== myClub.id);
+  }, [state, myClub]);
+
+  if (!state || !myClub) return null;
 
   const filtered = listed
     .filter(x => filter ? `${x.player.firstName} ${x.player.lastName}`.toLowerCase().includes(filter.toLowerCase()) : true)
@@ -59,7 +63,7 @@ export default function Transfers() {
             {['GK','CB','LB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST'].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={sort} onValueChange={(v: any) => setSort(v)}>
+        <Select value={sort} onValueChange={(v: 'price'|'ovr'|'age') => setSort(v)}>
           <SelectTrigger className="w-24 h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ovr">OVR</SelectItem>
