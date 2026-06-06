@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/hooks/useGame';
 import { Button } from '@/components/ui/button';
 import { advanceWeek, endSeason, generateTransferMarket, simulateMatch } from '@/game/engine';
-import { Match, MatchEvent } from '@/game/types';
+import { Match, MatchEvent, Club } from '@/game/types';
 import { ArrowLeft, FastForward } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -15,6 +15,8 @@ export default function MatchPage() {
   const [shownEvents, setShownEvents] = useState<MatchEvent[]>([]);
   const [finalMatch, setFinalMatch] = useState<Match | null>(null);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   if (!state) { nav('/career'); return null; }
   const myClub = state.clubs[state.myClubId];
@@ -96,8 +98,6 @@ export default function MatchPage() {
     else nav('/app');
   };
 
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
-
   const match = finalMatch ?? next!;
 
   return (
@@ -151,7 +151,7 @@ export default function MatchPage() {
   );
 }
 
-function Side({ club, reverse }: { club: any; reverse?: boolean }) {
+function Side({ club, reverse }: { club: Club; reverse?: boolean }) {
   return (
     <div className={`flex items-center gap-2 flex-1 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
       <div className="h-14 w-14 rounded-md flex items-center justify-center text-3xl shrink-0" style={{ backgroundColor: club.primaryColor, color: club.secondaryColor }}>{club.badge}</div>

@@ -8,6 +8,31 @@ function ovrColor(o: number) {
   return 'bg-muted text-muted-foreground';
 }
 
+export function moraleEmoji(m: number) {
+  if (m >= 80) return '😁';
+  if (m >= 50) return '😐';
+  if (m >= 30) return '🙁';
+  return '😡';
+}
+
+export function Flag({ nationality }: { nationality: string }) {
+  const code = nationality.replace(/[^a-zA-Z]/g, '').trim().toUpperCase();
+  const map: Record<string, string> = {
+    'ESP': 'es', 'GER': 'de', 'FRA': 'fr', 'ITA': 'it', 'ENG': 'gb-eng', 'BRA': 'br',
+    'ARG': 'ar', 'POR': 'pt', 'NED': 'nl', 'BEL': 'be', 'MEX': 'mx', 'USA': 'us',
+    'JPN': 'jp', 'KOR': 'kr', 'MAR': 'ma', 'CIV': 'ci', 'SEN': 'sn', 'NGA': 'ng',
+    'COL': 'co', 'URU': 'uy', 'SUI': 'ch', 'AUT': 'at', 'DEN': 'dk', 'SWE': 'se'
+  };
+  const c2 = map[code];
+  if (!c2) return <span>{nationality}</span>;
+  return (
+    <span className="flex items-center gap-1.5" title={code}>
+      <img src={`https://flagcdn.com/w20/${c2}.png`} alt={code} className="w-4 h-3 rounded-[2px] object-cover" />
+      <span>{code}</span>
+    </span>
+  );
+}
+
 export function PlayerRow({ player, onClick, right }: { player: Player; onClick?: () => void; right?: React.ReactNode }) {
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg glass hover:border-primary/50 transition-all text-left">
@@ -15,9 +40,12 @@ export function PlayerRow({ player, onClick, right }: { player: Player; onClick?
       <span className="stat-pill min-w-[42px] bg-muted text-muted-foreground">{player.position}</span>
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate text-sm">{player.firstName} {player.lastName}</div>
-        <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-          <span>{player.nationality}</span> · <span>{player.age}y</span>
-          {player.injured > 0 && <span className="text-destructive">🚑 {player.injured}w</span>}
+        <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
+          <Flag nationality={player.nationality} />
+          <span>·</span>
+          <span>{player.age}y</span>
+          <span title={`Morale: ${Math.round(player.morale)}`}>{moraleEmoji(player.morale)}</span>
+          {player.injured > 0 && <span className="text-destructive font-medium">🚑 {player.injured}w</span>}
         </div>
       </div>
       {right ?? <div className="text-right text-xs text-muted-foreground">

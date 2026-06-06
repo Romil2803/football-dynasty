@@ -29,7 +29,7 @@ export default function NewCareer() {
     const { club, players } = createMyClub({ name, short, primaryColor: primary, secondaryColor: secondary, badge, stadium, division });
     const world = createWorld(club, players);
     const state: GameState = {
-      version: 1, managerName, myClubId: club.id, season: 1, week: 1,
+      version: 1, managerName, managerReputation: 50, boardConfidence: 50, isSacked: false, myClubId: club.id, season: 1, week: 1,
       clubs: world.clubs, players: world.players, fixtures: world.fixtures,
       standings: {}, transferList: [], finances: [], history: [],
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -47,7 +47,7 @@ export default function NewCareer() {
     const { club, players } = createMyClub({ name: preset.name, short: preset.short, primaryColor: col.primary, secondaryColor: col.secondary, badge: preset.badge, stadium: `${preset.city} Arena`, division: 1 });
     const world = createWorld(club, players);
     const state: GameState = {
-      version: 1, managerName, myClubId: club.id, season: 1, week: 1,
+      version: 1, managerName, managerReputation: 50, boardConfidence: 50, isSacked: false, myClubId: club.id, season: 1, week: 1,
       clubs: world.clubs, players: world.players, fixtures: world.fixtures,
       standings: {}, transferList: [], finances: [], history: [],
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),

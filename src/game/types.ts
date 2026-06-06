@@ -10,6 +10,18 @@ export interface PlayerStats {
   physical: number;
 }
 
+export interface PlayerPersonality {
+  loyalty: number; // 1-100
+  ambition: number; // 1-100
+  professionalism: number; // 1-100
+  leadership: number; // 1-100
+  temperament: number; // 1-100
+  ego: number; // 1-100
+  consistency: number; // 1-100
+  bigMatch: number; // 1-100
+  archetype: string;
+}
+
 export interface Player {
   id: string;
   firstName: string;
@@ -23,6 +35,7 @@ export interface Player {
   wage: number; // €/week
   contractYears: number;
   stats: PlayerStats;
+  personality: PlayerPersonality;
   morale: number; // 0-100
   fitness: number; // 0-100
   injured: number; // weeks
@@ -51,6 +64,8 @@ export interface Club {
   formation: string;
   startingXI: string[]; // 11 player ids
   bench: string[]; // up to 7
+  academyLevel: number; // 1-5
+  youthIds: string[];
 }
 
 export interface MatchEvent {
@@ -103,6 +118,9 @@ export interface FinanceEvent {
 export interface GameState {
   version: number;
   managerName: string;
+  managerReputation: number; // 1-100
+  boardConfidence: number; // 0-100
+  isSacked: boolean;
   myClubId: string;
   season: number;
   week: number; // 1..38
